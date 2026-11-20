@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PCB Test Log</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#fff; --text:#1c1f24; --muted:#6b7280; --line:#e2e5ea;
+    --pass:#16a34a; --fail:#dc2626; --accent:#2563eb;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#111418; --card:#1b1f26; --text:#eceff4; --muted:#98a1b0; --line:#2b313b; }
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%;height:auto;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  body{margin:0;background:var(--bg);color:var(--text);min-height:100%;
+    font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Thai",sans-serif;
+    /* เผื่อพื้นที่ท้ายหน้า ไม่ให้แถบเครื่องมือ Safari บังเนื้อหา */
+    padding:12px 12px calc(110px + env(safe-area-inset-bottom));}
+  .wrap{max-width:520px;margin:0 auto;display:grid;gap:12px;grid-template-columns:minmax(0,1fr);
+    grid-template-areas:"top" "scan" "result" "list" "settings"}
+  .wrap>.top{grid-area:top} .a-scan{grid-area:scan} .a-result{grid-area:result}
+  .a-list{grid-area:list} .a-settings{grid-area:settings}
+  @media (min-width:820px){
+    body{padding:20px 24px calc(110px + env(safe-area-inset-bottom))}
+    .wrap{max-width:1000px;gap:16px;align-items:start;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+      grid-template-areas:"top top" "scan list" "result list" "settings list"}
+    .scanbox video{max-height:45vh}
+  }
+  @media (max-width:360px){
+    body{padding-left:8px;padding-right:8px}
+    .card{padding:10px}
+    .res{font-size:17px;padding:14px 4px}
+    #scanBtn{font-size:16px}
+  }
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+  h1{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
+  .top{display:flex;justify-content:space-between;align-items:center}
+  .sync{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:5px}
+  label{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
+  input[type=text],textarea{width:100%;font:inherit;color:var(--text);background:var(--bg);
+    border:1px solid var(--line);border-radius:10px;padding:12px}
+  textarea{resize:vertical;min-height:64px}
+  button{font:inherit;border:0;border-radius:12px;padding:14px;cursor:pointer;color:#fff;background:var(--accent);
+    display:flex;align-items:center;justify-content:center;gap:8px}
+  button:active{opacity:.8}
+  button.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+  button:disabled{opacity:.5}
+
+  .i{width:1.25em;height:1.25em;flex:none;fill:none;stroke:currentColor;stroke-width:2;
+     stroke-linecap:round;stroke-linejoin:round}
+  .pass-c{color:var(--pass)} .fail-c{color:var(--fail)}
+
+  #scanBtn{width:100%;font-size:18px;padding:16px}
+  .scanbox{position:relative;border-radius:12px;overflow:hidden;background:#000;display:none;margin-bottom:10px}
+  .scanbox video{width:100%;display:block;max-height:60vh;object-fit:cover}
+  .scanbox .frame{position:absolute;inset:18% 18%;border:3px solid #fff9;border-radius:12px;pointer-events:none}
+  .scanbox .hint{position:absolute;left:0;right:0;bottom:8px;text-align:center;color:#fff;font-size:13px;text-shadow:0 1px 3px #000}
+  .scanbox button{position:absolute;right:8px;top:8px;padding:8px 12px;background:#000a;color:#fff;border:0}
+  .status{font-size:14px;margin-top:8px;min-height:20px;color:var(--fail)}
+  .prev{margin-top:8px;font-size:14px;padding:8px 10px;border-radius:10px;background:var(--bg);display:none;
+        align-items:center;gap:6px}
+  .row{display:flex;gap:8px}
+  .row>*{flex:1}
+  .res{font-size:20px;padding:18px 8px}
+  .res.pass{background:var(--pass);color:#fff;border:2px solid var(--pass)}
+  .res.fail{background:var(--fail);color:#fff;border:2px solid var(--fail)}
+  .res.off{background:var(--card);color:var(--text);border:2px solid var(--line)}
+  .stats{display:flex;gap:16px;font-size:15px;margin:2px 0 10px;align-items:center}
+  .stats span{display:flex;align-items:center;gap:5px}
+  .searchwrap{position:relative;margin-bottom:6px}
+  .searchwrap .i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted)}
+  .searchwrap input{padding-left:38px}
+  .list{display:flex;flex-direction:column}
+  .item{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line);cursor:pointer}
+  .item:first-child{border-top:0}
+  .item .i{width:24px;height:24px;margin-top:1px}
+  .item .c{font-weight:600;word-break:break-all}
+  .item .n{font-size:13px;color:var(--muted);word-break:break-word}
+  .empty{color:var(--muted);font-size:14px;padding:6px 0}
+  .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);
+    background:#111d;color:#fff;padding:10px 16px;border-radius:999px;font-size:15px;display:none;z-index:9;max-width:90vw}
+  details summary{cursor:pointer;color:var(--muted);font-size:14px;display:flex;align-items:center;gap:8px}
+</style>
+</head>
+<body>
+
+<!-- ชุดไอคอน -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chip" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m8 12.5 2.8 2.8L16 9.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+</svg>
+
+<div class="wrap">
+
+  <div class="top">
+    <h1><svg class="i"><use href="#i-chip"/></svg>PCB Test Log</h1>
+    <span class="sync" id="sync">กำลังโหลด…</span>
+  </div>
+
+  <div class="card a-scan">
+    <div class="scanbox" id="scanbox">
+      <video id="video" playsinline muted></video>
+      <div class="frame"></div>
+      <div class="hint">เล็งกล้องไปที่ QR code</div>
+      <button id="stopBtn" type="button"><svg class="i"><use href="#i-close"/></svg>ปิด</button>
+    </div>
+
+    <button id="scanBtn" type="button" style="margin-bottom:12px"><svg class="i"><use href="#i-scan"/></svg>สแกน QR</button>
+
+    <label for="code">รหัสบอร์ด</label>
+    <input type="text" id="code" placeholder="สแกนแล้วรหัสจะขึ้นอัตโนมัติ" autocomplete="off" autocapitalize="characters">
+    <div class="prev" id="prev"></div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="card a-result">
+    <label>ผลเทส</label>
+    <div class="row" style="margin-bottom:12px">
+      <button class="res off" id="passBtn" type="button"><svg class="i"><use href="#i-check"/></svg>ผ่าน</button>
+      <button class="res off" id="failBtn" type="button"><svg class="i"><use href="#i-x"/></svg>ไม่ผ่าน</button>
+    </div>
+    <label for="note">หมายเหตุ</label>
+    <textarea id="note" placeholder="เช่น 3.3V ตก, ต้องแก้ R5"></textarea>
+    <button id="saveBtn" type="button" style="width:100%;margin-top:12px" disabled><svg class="i"><use href="#i-save"/></svg>บันทึก</button>
+  </div>
+
+  <div class="card a-list">
+    <div class="stats" id="stats"></div>
+    <div class="searchwrap">
+      <svg class="i"><use href="#i-search"/></svg>
+      <input type="text" id="search" placeholder="ค้นหารหัส">
+    </div>
+    <div class="list" id="list"></div>
+  </div>
+
+  <details class="card a-settings">
+    <summary><svg class="i"><use href="#i-settings"/></svg>ตั้งค่า</summary>
+    <div style="margin-top:10px">
+      <label for="url">Apps Script Web App URL</label>
+      <input type="text" id="url" placeholder="https://script.google.com/macros/s/.../exec">
+      <button id="urlSave" class="ghost" type="button" style="margin-top:8px;width:100%">บันทึก URL</button>
+    </div>
+  </details>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script>
+// ====== ตั้งค่า: ใส่ URL ของ Apps Script (ลงท้ายด้วย /exec) ตรงนี้ หรือกรอกในส่วน "ตั้งค่า" ในหน้าเว็บ ======
+const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbykxYC0OtuWHyYoamysVKXTUFFSzZbJ_Rn-Fmrgh9IRucB3sobNXbxPnSlR8weZN-pSBg/exec";
+// ==============================================================================================
+
+// ค่าที่เขียนลง Google Sheet (คอลัมน์ ผลเทส) — ในหน้าเว็บแสดงเป็นไอคอนแทน
+const PASS = '✅', FAIL = '❌';
+
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v==null ? d : JSON.parse(v);}catch(e){return d;} },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+const SVGNS = 'http://www.w3.org/2000/svg';
+function icon(name, cls){
+  const s = document.createElementNS(SVGNS, 'svg');
+  s.setAttribute('class', 'i' + (cls ? ' ' + cls : ''));
+  const u = document.createElementNS(SVGNS, 'use');
+  u.setAttribute('href', '#i-' + name);
+  s.appendChild(u);
+  return s;
+}
+const resIcon = r => r === PASS ? icon('check', 'pass-c') : icon('x', 'fail-c');
+
+let scriptUrl = store.get('pcb_url', '') || DEFAULT_SCRIPT_URL;
+let records = store.get('pcb_records', {});   // code -> {code,result,note,time}
+let queue   = store.get('pcb_queue', []);     // รอส่งขึ้น Sheet
+let result  = '';                             // PASS | FAIL | ''
+let flushing = false;
+
+// ---------- UI helpers ----------
+function toast(msg){
+  const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toast.t); toast.t = setTimeout(()=> t.style.display='none', 1800);
+}
+function setStatus(msg){ $('status').textContent = msg || ''; }
+function nowStr(){
+  const d = new Date(), p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+function updateSync(){
+  const el = $('sync'); el.textContent = '';
+  if (!scriptUrl){ el.append(icon('alert'), 'ยังไม่ตั้งค่า URL'); }
+  else if (queue.length){ el.append(icon('clock'), `รอส่ง ${queue.length}`); }
+  else { el.append(icon('cloud'), 'ซิงค์แล้ว'); }
+}
+
+// ---------- ผลเทส ----------
+function setResult(r){
+  result = r;
+  $('passBtn').className = 'res ' + (r===PASS ? 'pass' : 'off');
+  $('failBtn').className = 'res ' + (r===FAIL ? 'fail' : 'off');
+  refreshSave();
+}
+function refreshSave(){ $('saveBtn').disabled = !($('code').value.trim() && result); }
+$('passBtn').onclick = () => setResult(PASS);
+$('failBtn').onclick = () => setResult(FAIL);
+
+// ---------- รหัสบอร์ด ----------
+function showPrev(){
+  const code = $('code').value.trim(), p = $('prev');
+  const r = records[code];
+  p.textContent = '';
+  if (code && r){
+    p.style.display = 'flex';
+    p.append('เคยบันทึกแล้ว:', resIcon(r.result),
+      `${r.note ? r.note + ' · ' : ''}${r.time} — บันทึกใหม่จะทับค่าเดิม`);
+  } else p.style.display = 'none';
+}
+$('code').addEventListener('input', () => { showPrev(); refreshSave(); });
+
+function useCode(text){
+  $('code').value = String(text).trim();
+  showPrev(); refreshSave();
+  if (navigator.vibrate) navigator.vibrate(80);
+  const r = records[$('code').value];
+  if (r){ setResult(r.result); $('note').value = r.note || ''; }
+  else { setResult(''); $('note').value = ''; }
+}
+
+// ---------- สแกนด้วยกล้องสด ----------
+let stream = null, scanning = false, detector = null;
+const video = $('video'), canvas = document.createElement('canvas'),
+      ctx = canvas.getContext('2d', {willReadFrequently:true});
+
+async function startScan(){
+  if (scanning) return;
+  setStatus('');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    setStatus('เบราว์เซอร์นี้เปิดกล้องไม่ได้ (ต้องเปิดผ่าน https)'); return;
+  }
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720}}, audio:false
+    });
+  }catch(e){
+    setStatus('เปิดกล้องไม่ได้ — กรุณาอนุญาตการใช้กล้อง หากฝังอยู่ใน Google Sites กล้องอาจถูกบล็อก ให้เปิดหน้านี้จากลิงก์โดยตรง');
+    return;
+  }
+  video.srcObject = stream;
+  try{ await video.play(); }catch(e){}
+  $('scanbox').style.display = 'block';
+  scanning = true;
+  detector = null;
+  if ('BarcodeDetector' in window){
+    try{ detector = new BarcodeDetector({formats:['qr_code']}); }catch(e){ detector = null; }
+  }
+  if (!detector && !window.jsQR) setStatus('โหลดตัวอ่าน QR ไม่สำเร็จ (ตรวจสอบอินเทอร์เน็ต)');
+  tick();
+}
+function stopScan(){
+  scanning = false;
+  if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+  video.srcObject = null;
+  $('scanbox').style.display = 'none';
+}
+async function tick(){
+  if (!scanning) return;
+  if (video.readyState >= 2 && video.videoWidth){
+    let text = null;
+    try{
+      if (detector){
+        const r = await detector.detect(video);
+        if (r.length) text = r[0].rawValue;
+      } else if (window.jsQR){
+        const w = video.videoWidth, h = video.videoHeight;
+        const s = Math.min(1, 720 / Math.max(w, h));
+        canvas.width = Math.round(w*s); canvas.height = Math.round(h*s);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const r = jsQR(img.data, img.width, img.height, {inversionAttempts:'dontInvert'});
+        if (r) text = r.data;
+      }
+    }catch(e){}
+    if (text && text.trim()){ stopScan(); useCode(text); toast('สแกนได้: ' + text.trim()); return; }
+  }
+  setTimeout(tick, 100);
+}
+$('scanBtn').onclick = startScan;
+$('stopBtn').onclick = stopScan;
+
+// ---------- ข้อมูล / ซิงค์ Google Sheet ----------
+function saveLocal(){ store.set('pcb_records', records); store.set('pcb_queue', queue); }
+
+async function loadRemote(){
+  if (!scriptUrl){ updateSync(); render(); return; }
+  try{
+    const res = await fetch(scriptUrl, {method:'GET'});
+    const j = await res.json();
+    if (j && j.ok){
+      const map = {};
+      j.rows.forEach(r => map[r.code] = r);
+      queue.forEach(q => map[q.code] = q);   // รายการที่ยังรอส่งให้ทับค่าจาก Sheet
+      records = map; saveLocal();
+    }
+  }catch(e){ /* ออฟไลน์: ใช้ข้อมูลในเครื่อง */ }
+  updateSync(); render(); showPrev();
+}
+
+async function flush(){
+  if (flushing || !scriptUrl || !queue.length){ updateSync(); return; }
+  flushing = true;
+  while (queue.length){
+    const item = queue[0];
+    try{
+      const res = await fetch(scriptUrl, {
+        method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify(item)
+      });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error || 'error');
+      queue.shift(); saveLocal(); updateSync();
+    }catch(e){ break; }
+  }
+  flushing = false; updateSync();
+}
+
+$('saveBtn').onclick = () => {
+  const code = $('code').value.trim();
+  if (!code || !result) return;
+  const rec = {code, result, note: $('note').value.trim(), time: nowStr()};
+  records[code] = rec;
+  queue = queue.filter(q => q.code !== code);
+  queue.push(rec);
+  saveLocal(); render(); updateSync();
+  toast(`บันทึก ${code} แล้ว`);
+  // เคลียร์ฟอร์มพร้อมสแกนตัวถัดไป
+  $('code').value = ''; $('note').value = ''; setResult(''); showPrev(); setStatus('');
+  flush();
+};
+
+// ---------- รายการ ----------
+function render(){
+  const all = Object.values(records).sort((a,b)=> (b.time||'').localeCompare(a.time||''));
+  const pass = all.filter(r => r.result===PASS).length;
+  const fail = all.filter(r => r.result===FAIL).length;
+  const st = $('stats'); st.textContent = '';
+  const mk = (ic, txt) => { const s = document.createElement('span'); s.append(ic, txt); return s; };
+  st.append(
+    mk(document.createTextNode(''), `ทั้งหมด ${all.length}`),
+    mk(icon('check','pass-c'), String(pass)),
+    mk(icon('x','fail-c'), String(fail))
+  );
+  const q = $('search').value.trim().toLowerCase();
+  const rows = q ? all.filter(r => r.code.toLowerCase().includes(q)) : all;
+  const list = $('list'); list.textContent = '';
+  if (!rows.length){
+    const d = document.createElement('div'); d.className='empty';
+    d.textContent = all.length ? 'ไม่พบรหัสที่ค้นหา' : 'ยังไม่มีข้อมูล'; list.appendChild(d); return;
+  }
+  rows.slice(0, 200).forEach(r => {
+    const it = document.createElement('div'); it.className = 'item';
+    const b = document.createElement('div');
+    const c = document.createElement('div'); c.className='c'; c.textContent = r.code;
+    const n = document.createElement('div'); n.className='n';
+    n.textContent = (r.note ? r.note + ' · ' : '') + (r.time || '');
+    b.append(c, n); it.append(resIcon(r.result), b);
+    it.onclick = () => { useCode(r.code); window.scrollTo({top:0, behavior:'smooth'}); };
+    list.appendChild(it);
+  });
+}
+$('search').addEventListener('input', render);
+
+// ---------- ตั้งค่า ----------
+$('url').value = scriptUrl;
+$('urlSave').onclick = () => {
+  scriptUrl = $('url').value.trim(); store.set('pcb_url', scriptUrl);
+  toast('บันทึก URL แล้ว'); loadRemote().then(flush);
+};
+
+window.addEventListener('online', () => flush());
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopScan(); });
+
+render(); updateSync();
+loadRemote().then(flush);
+</script>
+</body>
+</html>
