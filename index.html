@@ -237,7 +237,7 @@ function useCode(text){
 }
 
 // ---------- สแกนด้วยกล้องสด ----------
-let stream = null, scanning = false, detector = null;
+let stream = null, scanning = false, detector = null, frameNo = 0;
 const video = $('video'), canvas = document.createElement('canvas'),
       ctx = canvas.getContext('2d', {willReadFrequently:true});
 
@@ -249,8 +249,14 @@ async function startScan(){
   }
   try{
     stream = await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720}}, audio:false
+      video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}, audio:false
     });
+    // เปิดโฟกัสอัตโนมัติต่อเนื่อง (ถ้าอุปกรณ์รองรับ)
+    try{
+      const tr = stream.getVideoTracks()[0], caps = tr.getCapabilities ? tr.getCapabilities() : {};
+      if (caps.focusMode && caps.focusMode.includes('continuous'))
+        await tr.applyConstraints({advanced:[{focusMode:'continuous'}]});
+    }catch(_){}
   }catch(e){
     setStatus('เปิดกล้องไม่ได้ — กรุณาอนุญาตการใช้กล้อง หากฝังอยู่ใน Google Sites กล้องอาจถูกบล็อก ให้เปิดหน้านี้จากลิงก์โดยตรง');
     return;
@@ -282,11 +288,15 @@ async function tick(){
         if (r.length) text = r[0].rawValue;
       } else if (window.jsQR){
         const w = video.videoWidth, h = video.videoHeight;
-        const s = Math.min(1, 720 / Math.max(w, h));
-        canvas.width = Math.round(w*s); canvas.height = Math.round(h*s);
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        frameNo++;
+        // สลับ: เฟรมเต็ม (ความละเอียดสูงสุด 1280) / ครอปกลางภาพ 60% (QR ใหญ่ขึ้นในตัวอ่าน)
+        let sx = 0, sy = 0, sw = w, sh = h;
+        if (frameNo % 2 === 0){ sw = Math.round(w*0.6); sh = Math.round(h*0.6); sx = Math.round((w-sw)/2); sy = Math.round((h-sh)/2); }
+        const s = Math.min(1, 1280 / Math.max(sw, sh));
+        canvas.width = Math.round(sw*s); canvas.height = Math.round(sh*s);
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
         const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const r = jsQR(img.data, img.width, img.height, {inversionAttempts:'dontInvert'});
+        const r = jsQR(img.data, img.width, img.height, {inversionAttempts:'attemptBoth'});
         if (r) text = r.data;
       }
     }catch(e){}
