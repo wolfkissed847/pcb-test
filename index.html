@@ -68,8 +68,24 @@
   .res.pass{background:var(--pass);color:#fff;border:2px solid var(--pass)}
   .res.fail{background:var(--fail);color:#fff;border:2px solid var(--fail)}
   .res.off{background:var(--card);color:var(--text);border:2px solid var(--line)}
-  .stats{display:flex;gap:16px;font-size:15px;margin:2px 0 10px;align-items:center}
-  .stats span{display:flex;align-items:center;gap:5px}
+  .sum{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+  .sumbox{background:var(--bg);border-radius:10px;padding:10px}
+  .sumbox .lbl{font-size:13px;color:var(--muted);margin-bottom:4px}
+  .nums{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:15px;align-items:center}
+  .nums span{display:flex;align-items:center;gap:4px}
+  .dayhead{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--muted);padding:14px 0 6px;border-bottom:1px solid var(--line)}
+  .dayhead .nums{font-size:13px;gap:4px}
+  .dayhead .i{width:16px;height:16px}
+  .dayhead + .item{border-top:0}
+  .tag{display:inline-block;font-size:11px;font-weight:500;padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:2px;background:#f59e0b26;color:#b45309}
+  .tag-n{background:var(--bg);color:var(--muted)}
+  .fix-c{color:#d97706}
+  .prev-top{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .chip{display:flex;align-items:center;gap:3px;font-size:12px;padding:2px 6px;border-radius:999px;background:var(--card);border:1px solid var(--line)}
+  .chip .i{width:14px;height:14px}
+  .prev-note{margin-top:6px;font-size:13px;color:var(--muted)}
+  @media (max-width:360px){ .sum{grid-template-columns:1fr} }
   .searchwrap{position:relative;margin-bottom:6px}
   .searchwrap .i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted)}
   .searchwrap input{padding-left:38px}
@@ -99,6 +115,7 @@
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
   <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
 </svg>
 
@@ -137,7 +154,10 @@
   </div>
 
   <div class="card a-list">
-    <div class="stats" id="stats"></div>
+    <div class="sum">
+      <div class="sumbox"><div class="lbl" id="todayLbl">วันนี้</div><div class="nums" id="todayStats"></div></div>
+      <div class="sumbox"><div class="lbl">รวมทั้งหมด</div><div class="nums" id="allStats"></div></div>
+    </div>
     <div class="searchwrap">
       <svg class="i"><use href="#i-search"/></svg>
       <input type="text" id="search" placeholder="ค้นหารหัส">
@@ -10268,6 +10288,7 @@ const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbykxYC0OtuWH
 
 // ค่าที่เขียนลง Google Sheet (คอลัมน์ ผลเทส) — ในหน้าเว็บแสดงเป็นไอคอนแทน
 const PASS = '✅', FAIL = '❌';
+const DAYS = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
 
 const $ = id => document.getElementById(id);
 const store = {
@@ -10284,12 +10305,54 @@ function icon(name, cls){
   return s;
 }
 const resIcon = r => r === PASS ? icon('check', 'pass-c') : icon('x', 'fail-c');
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 let scriptUrl = store.get('pcb_url', '') || DEFAULT_SCRIPT_URL;
-let records = store.get('pcb_records', {});   // code -> {code,result,note,time}
-let queue   = store.get('pcb_queue', []);     // รอส่งขึ้น Sheet
-let result  = '';                             // PASS | FAIL | ''
-let flushing = false;
+let log   = store.get('pcb_log', []);      // ประวัติการเทสทุกครั้ง [{id,date,day,time,code,result,note,attempt,type}]
+let queue = store.get('pcb_queue2', []);   // รายการที่ยังไม่ได้ส่งขึ้น Sheet
+let result = '';                           // PASS | FAIL | ''
+let flushing = false, serverOld = false;
+
+
+
+// ---------- วันที่ ----------
+function pad(n){ return String(n).padStart(2, '0'); }
+function todayStr(){ const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function nowTime(){ const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+function dayOf(date){ const p = String(date).split('-').map(Number); return p[0] ? DAYS[new Date(p[0], p[1]-1, p[2]).getDay()] : ''; }
+function fmtDate(date){ const p = String(date).split('-'); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : date; }
+function dayLabel(date){
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  const yStr = `${y.getFullYear()}-${pad(y.getMonth()+1)}-${pad(y.getDate())}`;
+  const prefix = date === todayStr() ? 'วันนี้ · ' : date === yStr ? 'เมื่อวาน · ' : '';
+  return `${prefix}${dayOf(date)} ${fmtDate(date)}`;
+}
+
+// ---------- ประวัติของบอร์ด ----------
+const sortKey = e => `${e.date} ${e.time}`;
+function historyOf(code){ return log.filter(e => e.code === code).sort((a, b) => sortKey(a).localeCompare(sortKey(b))); }
+// ครั้งที่ / ประเภท ของการเทสครั้งถัดไป (ฝั่ง Sheet จะคำนวณซ้ำอีกครั้งเพื่อความถูกต้อง)
+function classify(code){
+  const h = historyOf(code);
+  const attempt = h.length + 1;
+  const type = attempt === 1 ? 'ใหม่' : (h.some(e => e.result === FAIL) ? 'ตัวแก้' : 'เทสซ้ำ');
+  return {attempt, type};
+}
+
+// ย้ายรายการค้างส่งจากเวอร์ชันเก่า (ไม่ให้ข้อมูลหาย)
+(function migrateOldQueue(){
+  const old = store.get('pcb_queue', []);
+  if (!Array.isArray(old) || !old.length) return;
+  old.forEach(o => {
+    const t = String(o.time || ''), date = t.slice(0, 10);
+    const e = {id: newId(), date, day: dayOf(date), time: t.slice(11), code: o.code, result: o.result, note: o.note || ''};
+    Object.assign(e, classify(e.code));
+    queue.push(e); log.push(e);
+  });
+  store.set('pcb_queue', []);
+  saveLocal();
+})();
 
 // ---------- UI helpers ----------
 function toast(msg){
@@ -10297,15 +10360,12 @@ function toast(msg){
   clearTimeout(toast.t); toast.t = setTimeout(()=> t.style.display='none', 1800);
 }
 function setStatus(msg){ $('status').textContent = msg || ''; }
-function nowStr(){
-  const d = new Date(), p = n => String(n).padStart(2,'0');
-  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-}
 function updateSync(){
-  const el = $('sync'); el.textContent = '';
-  if (!scriptUrl){ el.append(icon('alert'), 'ยังไม่ตั้งค่า URL'); }
-  else if (queue.length){ el.append(icon('clock'), `รอส่ง ${queue.length}`); }
-  else { el.append(icon('cloud'), 'ซิงค์แล้ว'); }
+  const s = $('sync'); s.textContent = '';
+  if (!scriptUrl){ s.append(icon('alert'), 'ยังไม่ตั้งค่า URL'); }
+  else if (serverOld){ s.append(icon('alert'), 'ต้องอัปเดต Apps Script'); }
+  else if (queue.length){ s.append(icon('clock'), `รอส่ง ${queue.length}`); }
+  else { s.append(icon('cloud'), 'ซิงค์แล้ว'); }
 }
 
 // ---------- ผลเทส ----------
@@ -10322,23 +10382,28 @@ $('failBtn').onclick = () => setResult(FAIL);
 // ---------- รหัสบอร์ด ----------
 function showPrev(){
   const code = $('code').value.trim(), p = $('prev');
-  const r = records[code];
   p.textContent = '';
-  if (code && r){
-    p.style.display = 'flex';
-    p.append('เคยบันทึกแล้ว:', resIcon(r.result),
-      `${r.note ? r.note + ' · ' : ''}${r.time} — บันทึกใหม่จะทับค่าเดิม`);
-  } else p.style.display = 'none';
+  const h = code ? historyOf(code) : [];
+  if (!h.length){ p.style.display = 'none'; return; }
+  p.style.display = 'block';
+  const last = h[h.length - 1];
+  const top = el('div', 'prev-top');
+  top.append(`เคยเทส ${h.length} ครั้ง · ล่าสุด`, resIcon(last.result),
+    `${last.note ? last.note + ' · ' : ''}${fmtDate(last.date)} ${last.time}`);
+  const chips = el('div', 'chips');
+  h.slice(-6).forEach(e => { const c = el('span', 'chip'); c.append(resIcon(e.result), fmtDate(e.date).slice(0, 5)); chips.append(c); });
+  p.append(top, chips);
+  const next = classify(code);
+  if (next.type === 'ตัวแก้') p.append(el('div', 'prev-note', `บันทึกครั้งนี้จะเป็น "ตัวแก้" (ครั้งที่ ${next.attempt})`));
+  else p.append(el('div', 'prev-note', `บันทึกครั้งนี้จะเป็นเทสครั้งที่ ${next.attempt} (ข้อมูลเดิมไม่ถูกลบ)`));
 }
 $('code').addEventListener('input', () => { showPrev(); refreshSave(); });
 
 function useCode(text){
   $('code').value = String(text).trim();
+  setResult(''); $('note').value = '';
   showPrev(); refreshSave();
   if (navigator.vibrate) navigator.vibrate(80);
-  const r = records[$('code').value];
-  if (r){ setResult(r.result); $('note').value = r.note || ''; }
-  else { setResult(''); $('note').value = ''; }
 }
 
 // ---------- สแกนด้วยกล้องสด ----------
@@ -10444,25 +10509,27 @@ $('scanBtn').onclick = startScan;
 $('stopBtn').onclick = stopScan;
 
 // ---------- ข้อมูล / ซิงค์ Google Sheet ----------
-function saveLocal(){ store.set('pcb_records', records); store.set('pcb_queue', queue); }
+function saveLocal(){ store.set('pcb_log', log); store.set('pcb_queue2', queue); }
 
 async function loadRemote(){
   if (!scriptUrl){ updateSync(); render(); return; }
   try{
     const res = await fetch(scriptUrl, {method:'GET'});
     const j = await res.json();
-    if (j && j.ok){
-      const map = {};
-      j.rows.forEach(r => map[r.code] = r);
-      queue.forEach(q => map[q.code] = q);   // รายการที่ยังรอส่งให้ทับค่าจาก Sheet
-      records = map; saveLocal();
+    if (j && j.ok && j.v === 2){
+      serverOld = false;
+      const ids = new Set(j.rows.map(r => r.id));
+      log = j.rows.concat(queue.filter(q => !ids.has(q.id)));   // รายการที่ยังไม่ส่งยังอยู่ครบ
+      saveLocal();
+    } else if (j && j.ok){
+      serverOld = true;   // Apps Script ยังเป็นเวอร์ชันเก่า (ทับข้อมูล) — หยุดส่งไว้ก่อน ข้อมูลรอในเครื่อง
     }
   }catch(e){ /* ออฟไลน์: ใช้ข้อมูลในเครื่อง */ }
   updateSync(); render(); showPrev();
 }
 
 async function flush(){
-  if (flushing || !scriptUrl || !queue.length){ updateSync(); return; }
+  if (flushing || serverOld || !scriptUrl || !queue.length){ updateSync(); return; }
   flushing = true;
   while (queue.length){
     const item = queue[0];
@@ -10474,51 +10541,75 @@ async function flush(){
       });
       const j = await res.json();
       if (!j.ok) throw new Error(j.error || 'error');
+      const e = log.find(x => x.id === item.id);
+      if (e && j.attempt){ e.attempt = j.attempt; e.type = j.type; }
       queue.shift(); saveLocal(); updateSync();
     }catch(e){ break; }
   }
-  flushing = false; updateSync();
+  flushing = false; updateSync(); render(); showPrev();
 }
 
 $('saveBtn').onclick = () => {
   const code = $('code').value.trim();
   if (!code || !result) return;
-  const rec = {code, result, note: $('note').value.trim(), time: nowStr()};
-  records[code] = rec;
-  queue = queue.filter(q => q.code !== code);
-  queue.push(rec);
+  const date = todayStr();
+  const e = {id: newId(), date, day: dayOf(date), time: nowTime(), code, result, note: $('note').value.trim()};
+  Object.assign(e, classify(code));
+  log.push(e); queue.push(e);
   saveLocal(); render(); updateSync();
-  toast(`บันทึก ${code} แล้ว`);
+  toast(`บันทึก ${code} แล้ว${e.type === 'ตัวแก้' ? ' (ตัวแก้)' : ''}`);
   // เคลียร์ฟอร์มพร้อมสแกนตัวถัดไป
   $('code').value = ''; $('note').value = ''; setResult(''); showPrev(); setStatus('');
   flush();
 };
 
-// ---------- รายการ ----------
+// ---------- สรุปยอด + รายการแยกวัน ----------
+// นับตามบอร์ด (รหัสไม่ซ้ำ) โดยใช้ผลล่าสุดของแต่ละบอร์ดในช่วงนั้น
+function summarize(entries){
+  const latest = new Map(), fixed = new Set();
+  entries.slice().sort((a, b) => sortKey(a).localeCompare(sortKey(b))).forEach(e => {
+    latest.set(e.code, e.result);
+    if (e.type === 'ตัวแก้') fixed.add(e.code);
+  });
+  let pass = 0, fail = 0;
+  latest.forEach(r => r === PASS ? pass++ : fail++);
+  return {boards: latest.size, pass, fail, fixed: fixed.size};
+}
+function fillNums(box, s){
+  box.textContent = '';
+  const mk = (ic, txt) => { const sp = el('span'); if (ic) sp.append(ic); sp.append(txt); return sp; };
+  box.append(mk(null, `${s.boards} บอร์ด`), mk(icon('check','pass-c'), String(s.pass)),
+             mk(icon('x','fail-c'), String(s.fail)), mk(icon('wrench','fix-c'), `แก้ ${s.fixed}`));
+}
 function render(){
-  const all = Object.values(records).sort((a,b)=> (b.time||'').localeCompare(a.time||''));
-  const pass = all.filter(r => r.result===PASS).length;
-  const fail = all.filter(r => r.result===FAIL).length;
-  const st = $('stats'); st.textContent = '';
-  const mk = (ic, txt) => { const s = document.createElement('span'); s.append(ic, txt); return s; };
-  st.append(
-    mk(document.createTextNode(''), `ทั้งหมด ${all.length}`),
-    mk(icon('check','pass-c'), String(pass)),
-    mk(icon('x','fail-c'), String(fail))
-  );
+  const today = todayStr();
+  $('todayLbl').textContent = `วันนี้ · ${dayOf(today)} ${fmtDate(today)}`;
+  fillNums($('todayStats'), summarize(log.filter(e => e.date === today)));
+  fillNums($('allStats'), summarize(log));
+
   const q = $('search').value.trim().toLowerCase();
-  const rows = q ? all.filter(r => r.code.toLowerCase().includes(q)) : all;
+  const rows = (q ? log.filter(e => String(e.code).toLowerCase().includes(q)) : log)
+    .slice().sort((a, b) => sortKey(b).localeCompare(sortKey(a))).slice(0, 300);
   const list = $('list'); list.textContent = '';
-  if (!rows.length){
-    const d = document.createElement('div'); d.className='empty';
-    d.textContent = all.length ? 'ไม่พบรหัสที่ค้นหา' : 'ยังไม่มีข้อมูล'; list.appendChild(d); return;
-  }
-  rows.slice(0, 200).forEach(r => {
-    const it = document.createElement('div'); it.className = 'item';
-    const b = document.createElement('div');
-    const c = document.createElement('div'); c.className='c'; c.textContent = r.code;
-    const n = document.createElement('div'); n.className='n';
-    n.textContent = (r.note ? r.note + ' · ' : '') + (r.time || '');
+  if (!rows.length){ list.appendChild(el('div', 'empty', log.length ? 'ไม่พบรหัสที่ค้นหา' : 'ยังไม่มีข้อมูล')); return; }
+
+  let curDate = null;
+  rows.forEach(r => {
+    if (r.date !== curDate){
+      curDate = r.date;
+      const s = summarize(log.filter(e => e.date === curDate));
+      const head = el('div', 'dayhead');
+      const nums = el('span', 'nums');
+      nums.append(icon('check','pass-c'), String(s.pass), icon('x','fail-c'), String(s.fail));
+      head.append(el('span', null, dayLabel(curDate)), nums);
+      list.appendChild(head);
+    }
+    const it = el('div', 'item');
+    const b = el('div');
+    const c = el('div', 'c', r.code);
+    if (r.type === 'ตัวแก้') c.append(el('span', 'tag', 'ตัวแก้'));
+    if (r.attempt > 1) c.append(el('span', 'tag tag-n', `ครั้งที่ ${r.attempt}`));
+    const n = el('div', 'n', (r.note ? r.note + ' · ' : '') + (r.time || '') + (queue.some(x => x.id === r.id) ? ' · รอส่ง' : ''));
     b.append(c, n); it.append(resIcon(r.result), b);
     it.onclick = () => { useCode(r.code); window.scrollTo({top:0, behavior:'smooth'}); };
     list.appendChild(it);
@@ -10534,7 +10625,8 @@ $('urlSave').onclick = () => {
 };
 
 window.addEventListener('online', () => flush());
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopScan(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopScan(); else render(); });
+setInterval(render, 60000);   // ข้ามเที่ยงคืนแล้วเริ่มนับวันใหม่เอง
 
 render(); updateSync();
 loadRemote().then(flush);
